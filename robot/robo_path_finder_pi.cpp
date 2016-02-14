@@ -7,6 +7,8 @@
 #include <ctime>
 #include <cstdlib>
 #include <stdio.h>
+#define RIGHT_MOTOR_PQM 230
+#define LEFT_MOTOR_PQM 255
 const int n=20;// horizontal size of the map
 const int m=20; // vertical size size of the map
 unsigned int robo_dir=2, new_dir=0;
@@ -86,13 +88,14 @@ static int map[n][m] = {
 int starty=0,startx=0, endx=1,endy=1;
 int xA, yA, xB, yB, xC,yC,xD,yD;
 static int intial_dir = 1;
-static uint32_t distance1=0,avg=0,start=0;
+static uint32_t distance_dynamic=0,avg=0,start=0, distance_current;
 pthread_t *p1,*p2;
 uint8_t i;
 uint8_t right_d=0;
 uint8_t center_d=0;
 uint8_t left_d=0;
 static uint8_t obstacle=0;
+void move_servo_and_get_distance();
 
 uint32_t left_check=0;   
 uint32_t right_check =0;
@@ -111,7 +114,6 @@ void brake(void);
 
 void clear(int a);
 void sonarTrigger(void);
-void *servo(void *arg) ;
 void sonarEcho(int gpio, int level, uint32_t tick);
 using namespace std;
 
@@ -350,16 +352,21 @@ void sonarEcho(int gpio, int level, uint32_t tick)
     else
     {
         start=0;
-        distance1 = avg/10;
+        distance_dynamic = avg/10;
         avg=distance_s;
         //gpioTime(PI_TIME_RELATIVE, &secs, &mics);
         //printf("10-library started %d.%03d seconds ago\n", secs, mics/1000);
-        //	printf("%u sec, %d cm \n ", (tick-firstTick)/1000000, distance1);
-        if(distance1 <=5)
+        //	printf("%u sec, %d cm \n ", (tick-firstTick)/1000000, distance_dynamic);
+        if(distance_dynamic <=5)
         {
             obstacle=1;
             printf("Obstacle found!!!!! STOP LOOKOUT\n\n");
-            /*            stop();*/
+	    gpioWrite(MOTOR1E, PI_LOW);
+	    gpioWrite(MOTOR2E, PI_LOW);
+	    forward_flag=0;
+	    gpioSetAlertFunc(SONAR_ECHO, NULL);
+	    move_servo_and_get_distance();
+	    gpioSetAlertFunc(SONAR_ECHO, sonarEcho);
         }
         else
         {
@@ -370,42 +377,34 @@ void sonarEcho(int gpio, int level, uint32_t tick)
 
 }
 
-void *servo(void *arg) 
+void move_servo_and_get_distance()
 {
-    uint16_t pw=0;   
-    gpioSetPWMfrequency(PWM_TRIGGER,400);
-    gpioSetPWMrange(PWM_TRIGGER,    2500);
-    while(1)
-    {
-        if(obstacle==1)
-        {
-            gpioWrite  (PWM_TRIGGER, PI_OFF);
-            gpioSetMode(PWM_TRIGGER, PI_OUTPUT);
+    int pw=0;
+    gpioWrite  (PWM_TRIGGER, PI_OFF);
+    gpioSetMode(PWM_TRIGGER, PI_OUTPUT);
 
-            pw=1000;
-            gpioServo(18, pw);
-            time_sleep(1); /* 1/10th second delay */
-            left_d = distance1;
+    pw=800;
+    gpioServo(18, pw);
+    time_sleep(1.5);
+    left_d = distance_dynamic;
 
-            pw=1300;
-            gpioServo(18, pw);
-            time_sleep(1); /* 1/10th second delay */
-            center_d = distance1;
+    pw=1300;
+    gpioServo(18, pw);
+    time_sleep(1.5);
+    center_d = distance_dynamic;
 
-            pw=1800;
-            gpioServo(18,pw);
-            time_sleep(1);
-            right_d = distance1;
+    pw=1900;
+    gpioServo(18,pw);
+    time_sleep(1.5);
+    right_d = distance_dynamic;
 
-            pw=1300;
-            gpioServo(18,pw);
-            printf("%d\n", pw);
-            gpioSetMode(PWM_TRIGGER, PI_INPUT);
-            printf("Left %d cm, Ceter %d cm Right %d cm\n", left_d, center_d, right_d);
-        }
-        time_sleep(0.5);
-    }
-}   
+    pw=1300;
+    gpioServo(18,pw);
+    printf("%d\n", pw);
+    time_sleep(1);
+    gpioSetMode(PWM_TRIGGER, PI_INPUT);
+    printf("Left %d cm, Ceter %d cm Right %d cm\n", left_d, center_d, right_d);
+}
 
 void rightdrift(void)
 {
@@ -434,11 +433,12 @@ void forward(uint8_t pwm)
 {
 follow_normal_path:
     /* Check distance for right iturn is enough */
-    if(center_d <= 10)
+printf("VALUESSS %d %d %d\n", left_d, distance_dynamic, right_d);
+    if(distance_dynamic <= 10)
     {
         gpioWrite(MOTOR1E, PI_LOW);
         gpioWrite(MOTOR2E, PI_LOW);
-
+	move_servo_and_get_distance();
         if( (right_d < 8) && (right_d < left_d) )
             /* drift slight left() */
             leftdrift();
@@ -447,6 +447,7 @@ follow_normal_path:
             rightdrift();
 
         stop();
+	move_servo_and_get_distance();
         goto follow_normal_path;
     } 
     else
@@ -488,10 +489,12 @@ void rightturn(void)
 
 follow_normal_path:
     /* Check distance for right iturn is enough */
-    if( (right_d <=8) || (center_d <= 8) || (left_check <=8) )
+printf("VALUESSS %d %d %d\n", left_d,center_d, right_d);
+    if( (right_d <=8) || (center_d <= 8) || (left_d <=8) )
     {
         reverse();
         stop();
+	move_servo_and_get_distance();
         goto follow_normal_path;
     } 
     else
@@ -511,10 +514,13 @@ void leftturn(void)
 {
 follow_normal_path:
     /* Check distance for right iturn is enough */
-    if( (right_d <=8) || (center_d <= 8) || (left_check <=8) )
+printf("VALUESSS %d %d %d\n", left_d,center_d, right_d);
+    if( (right_d <=8) || (center_d <= 8) || (left_d <=8) )
     {
+printf("VALUESSS ISNIDE %d %d %d\n", left_d,center_d, right_d);
         reverse();
         stop();
+	move_servo_and_get_distance();
         goto follow_normal_path;
     } 
     else
@@ -537,20 +543,8 @@ void stop(void)
     gpioWrite(MOTOR2E, PI_LOW);
     forward_flag=0;
     obstacle=1;
-    time_sleep(3);
 }
 
-#if 0
-void stop_sonar_on(void)
-{
-    cout<<"STOP"<<endl;
-    gpioWrite(MOTOR1E, PI_LOW);
-    gpioWrite(MOTOR2E, PI_LOW);
-    forward_flag=0;
-    /*    time_sleep(3);*/
-    //servo();
-}
-#endif
 string route;
 
 void get_route_move_robo(int xa,int ya, int xb, int yb)
@@ -563,104 +557,106 @@ void get_route_move_robo(int xa,int ya, int xb, int yb)
     // follow the route on the map and display it 
     if(route.length()>0)
     {
-        int j; char c;
-        int x=xa;
-        int y=ya;
-        map[x][y]=2;
-        for(int i=0;i<route.length();i++)
-        {
-            c =route.at(i);
-            j=atoi(&c); 
-            x=x+dx[j];
-            y=y+dy[j];
-            map[x][y]=3;
-        }
-        map[x][y]=4;
+	int j; char c;
+	int x=xa;
+	int y=ya;
+	map[x][y]=2;
+	for(int i=0;i<route.length();i++)
+	{
+	    c =route.at(i);
+	    j=atoi(&c); 
+	    x=x+dx[j];
+	    y=y+dy[j];
+	    map[x][y]=3;
+	}
+	map[x][y]=4;
 
-        // display the map with the route
-        for(int x=0;x<n;x++)
-        {
-            cout<<"               ";
-            for(int y=0;y<m;y++)
-            {    if(map[x][y]==0)
-                cout<<". ";
-                else if(map[x][y]==1)
-                    cout<<"# "; //obstacle
-                else if(map[x][y]==2)
-                    cout<<"S "; //start
-                else if(map[x][y]==3)
-                    cout<<"+ "; //route
-                else if(map[x][y]==4)
-                    cout<<"G "; //finish
-                else
-                    cout<<". ";
-            }
-            cout<<endl;
-        }
+	// display the map with the route
+	for(int x=0;x<n;x++)
+	{
+	    cout<<"               ";
+	    for(int y=0;y<m;y++)
+	    {    if(map[x][y]==0)
+		cout<<". ";
+		else if(map[x][y]==1)
+		    cout<<"# "; //obstacle
+		else if(map[x][y]==2)
+		    cout<<"S "; //start
+		else if(map[x][y]==3)
+		    cout<<"+ "; //route
+		else if(map[x][y]==4)
+		    cout<<"G "; //finish
+		else
+		    cout<<". ";
+	    }
+	    cout<<endl;
+	}
     }
 
     cout<<"Moving robot in path"<<endl;
-    for(int i=0;i<route.length();i++)
-    {
-        char c[0];
-        c[0] =route.at(i);
-        new_dir = atoi(c) ;
-        //        cout<<"Robo Dir "<<robo_dir<<" New Dir "<<new_dir<<endl;
-        cout<<"--->";
-        while(obstacle==1)
-        {
-            time_sleep(0.5); /* Wait to clear the obstacle */
-        }
-        while(obstacle==0) 
-        {    
-            if((new_dir - robo_dir) == 0)
-            { 
-                cout<<"Forward";
-                forward(25);
-                /*            if(new_dir==0)
-                              cout<<"Moving South";
-                              else if(new_dir ==1)
-                              cout<<"Moving East";
-                              else if(new_dir ==2)
-                              cout<<"Moving North";
-                              else if(new_dir ==3)
-                              cout<<"Moving West";
-                              */
-            }
-            else if(( (new_dir - robo_dir) == -1 ) || ((new_dir - robo_dir) == -3))
-            {
-                cout<<"Moving Right";
-                stop();
-                rightturn();
-                forward(25);
-            }
-            else if(( (new_dir - robo_dir) == 1 ) || ((new_dir - robo_dir) == 3))
-            {
-                cout<<"Moving Left";
-                stop();
-                leftturn();
-                forward(25);
-            }
-            else if( (new_dir +robo_dir) % 2 == 0)
-            {
-                cout<<"About Turn required  "<<robo_dir<<" to "<<new_dir<<" ";
-                cout<<"Moving Right";
-                rightturn();
-                cout<<"Moving Right";
-                rightturn();
-            }
-            else
-            {
-                cout<<"************Wrong Direction *******"<<endl;
-                cout<<"Robo Dir "<<robo_dir<<" New Dir "<<new_dir<<endl;
-            }
-            robo_dir = new_dir;
-            cout<<std::flush;
-            //  getchar(); // wait for a (Enter) keypress  
-        }
+    while(1) {
+	for(int i=0;i<route.length();i++)
+	{
+	    while(obstacle==1)
+	    {
+		time_sleep(0.5); /* Wait to clear the obstacle */
+	    }
+	    char c[0];
+	    c[0] =route.at(i);
+	    new_dir = atoi(c) ;
+	    //        cout<<"Robo Dir "<<robo_dir<<" New Dir "<<new_dir<<endl;
+	    cout<<"--->";
+	    if((new_dir - robo_dir) == 0)
+	    { 
+		cout<<"Forward";
+		forward(25);
+		/*            if(new_dir==0)
+			      cout<<"Moving South";
+			      else if(new_dir ==1)
+			      cout<<"Moving East";
+			      else if(new_dir ==2)
+			      cout<<"Moving North";
+			      else if(new_dir ==3)
+			      cout<<"Moving West";
+		 */
+	    }
+	    else if(( (new_dir - robo_dir) == -1 ) || ((new_dir - robo_dir) == -3))
+	    {
+		cout<<"Moving Right";
+		stop();
+		move_servo_and_get_distance();
+		rightturn();
+		forward(25);
+	    }
+	    else if(( (new_dir - robo_dir) == 1 ) || ((new_dir - robo_dir) == 3))
+	    {
+		cout<<"Moving Left";
+		stop();
+		move_servo_and_get_distance();
+		leftturn();
+		forward(25);
+	    }
+	    else if( (new_dir +robo_dir) % 2 == 0)
+	    {
+		cout<<"About Turn required  "<<robo_dir<<" to "<<new_dir<<" ";
+		cout<<"Moving Right";
+		rightturn();
+		cout<<"Moving Right";
+		rightturn();
+	    }
+	    else
+	    {
+		cout<<"************Wrong Direction *******"<<endl;
+		cout<<"Robo Dir "<<robo_dir<<" New Dir "<<new_dir<<endl;
+	    }
+	    robo_dir = new_dir;
+	    cout<<std::flush;
+	    //  getchar(); // wait for a (Enter) keypress  
+	    cout<<endl;
 
+	}
+	break;
     }
-
 
     cout<<"===> Goal Reached"<<endl;
     stop();
@@ -706,8 +702,6 @@ int main()
     if (gpioInitialise()<0) return 1;
     gpioSetSignalFunc(2, clear);
 
-    p1 = gpioStartThread(servo, NULL); 
-
     gpioSetMode(SONAR_TRIGGER, PI_OUTPUT);
     gpioWrite  (SONAR_TRIGGER, PI_OFF);
     gpioSetMode(SONAR_ECHO,    PI_INPUT);
@@ -724,7 +718,8 @@ int main()
     gpioSetTimerFunc(0, 50, sonarTrigger); /* every 50ms */
     /* monitor sonar echos */
     gpioSetAlertFunc(SONAR_ECHO, sonarEcho);
-
+printf("START\n");
+getchar();
     get_route_move_robo(xA,yA,xB,yB);
     get_route_move_robo(xB,yB,xA,yA);
     get_route_move_robo(xC,yC,xA,yA);
