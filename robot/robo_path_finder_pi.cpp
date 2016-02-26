@@ -13,10 +13,11 @@
 #define REVERSE 105
 
 
-#define DYNAMIC_DIS 80
+#define DYNAMIC_DIS 40
 #define DISTANCE 18
+#define TURN_DISTANCE 10
 
-#define TURN_TIME       400000
+#define TURN_TIME       250000
 #define TURN_DRIFT_TIME 250000
 
 #define SERVO_RIGHT 700
@@ -116,6 +117,8 @@ uint32_t left_check=0;
 uint32_t right_check =0;
 /* forward prototypes */
 void forward(uint8_t);
+void forward_slow(void);
+void rerouting( uint8_t left);
 int forward_flag=0;
 void reverse(void);
 void leftturn(void);
@@ -376,7 +379,7 @@ void sonarEcho(int gpio, int level, uint32_t tick)
         //gpioTime(PI_TIME_RELATIVE, &secs, &mics);
         //printf("10-library started %d.%03d seconds ago\n", secs, mics/1000);
         //	printf("%u sec, %d cm \n ", (tick-firstTick)/1000000, distance_dynamic);
-        if(distance_dynamic <= 10)
+        if(distance_dynamic <= 15)
         {
             obstacle=1;
             printf("Obstacle found!!!!! STOP LOOKOUT\n\n");
@@ -416,7 +419,7 @@ void move_servo_and_get_distance()
     gpioServo(18,SERVO_CENTER);
     time_sleep(1);
     gpioSetMode(PWM_TRIGGER, PI_INPUT);
-    printf("Left %d cm, Ceter %d cm Right %d cm\n", left_d, center_d, right_d);
+//    printf("Left %d cm, Ceter %d cm Right %d cm\n", left_d, center_d, right_d);
 }
 
 void rightdrift(void)
@@ -446,18 +449,22 @@ void forward(uint8_t pwm)
 {
 follow_normal_path:
     /* Check distance for right iturn is enough */
-printf("VALUESSS %d %d %d\n", left_d, distance_dynamic, right_d);
+printf(" visibility L:%d C:%d R:%d\n", left_d, distance_dynamic, right_d);
     if(distance_dynamic <= DYNAMIC_DIS)
     {
         gpioWrite(MOTOR1E, PI_LOW);
         gpioWrite(MOTOR2E, PI_LOW);
 	move_servo_and_get_distance();
         if( (right_d <DISTANCE) && (right_d < left_d) )
-            /* drift slight left() */
-            leftdrift();
+        {
+	    /* Left path is open try rerouting via left */
+	    rerouting(1);
+	}
         else
-            /* drift slight right() */
-            rightdrift();
+        {
+	    /* right path is open try rerouting via right */
+	    rerouting(0);
+	}
 
         stop();
 	move_servo_and_get_distance();
@@ -496,14 +503,56 @@ void reverse(void)
     gpioDelay(TURN_DRIFT_TIME); 
 
 }
+void rerouting( uint8_t left)
+{
+    if(left ==1)
+    {
+	printf("Rerouting via left\n");
+	leftturn();
+	forward_slow();
+	rightturn();
+	forward_slow();
+	rightturn();
+	forward_slow();
+	leftturn();
+    }
+    else
+    {
+	printf("Rerouting via right\n");
+	rightturn();
+	forward_slow();
+	leftturn();
+	forward_slow();
+	leftturn();
+	forward_slow();
+	rightturn();
+    }
+    printf("Rerouting Completed\n");
+}
+void forward_slow(void)
+{
+    gpioWrite(MOTOR1A, PI_HIGH);
+    gpioWrite(MOTOR1B, PI_LOW);
+
+    gpioWrite(MOTOR2A, PI_HIGH);
+    gpioWrite(MOTOR2B, PI_LOW);
+
+    gpioPWM(MOTOR2E, LEFT_MOTOR_PQM-REVERSE);
+    gpioPWM(MOTOR1E, RIGHT_MOTOR_PQM-REVERSE);
+
+    time_sleep(1.5); 
+    gpioWrite(MOTOR1E, PI_LOW);
+    gpioWrite(MOTOR2E, PI_LOW);
+
+}
 
 void rightturn(void)
 {
-
+#if 1
 follow_normal_path:
     /* Check distance for right iturn is enough */
-printf("VALUESSS %d %d %d\n", left_d,center_d, right_d);
-    if( (right_d <=DISTANCE) || (center_d <=DISTANCE) || (left_d <=DISTANCE) )
+printf(" Visibility  L:%d C:%d R:%d\n", left_d,center_d, right_d);
+    if( (right_d <=TURN_DISTANCE) || (center_d <=TURN_DISTANCE) || (left_d <=TURN_DISTANCE) )
     {
         reverse();
         stop();
@@ -511,12 +560,14 @@ printf("VALUESSS %d %d %d\n", left_d,center_d, right_d);
         goto follow_normal_path;
     } 
     else
+#endif
     {
         /* enough*/
         gpioWrite(MOTOR1A, PI_LOW);
         gpioWrite(MOTOR1B, PI_HIGH);
-        gpioWrite(MOTOR2E, PI_HIGH);
-        gpioWrite(MOTOR1E, PI_HIGH);
+    
+	gpioPWM(MOTOR2E, LEFT_MOTOR_PQM);
+	gpioPWM(MOTOR1E, RIGHT_MOTOR_PQM);
         forward_flag=0;
         gpioDelay(TURN_TIME); 
         stop();
@@ -525,10 +576,11 @@ printf("VALUESSS %d %d %d\n", left_d,center_d, right_d);
 }
 void leftturn(void)
 {
+#if 1
 follow_normal_path:
     /* Check distance for right iturn is enough */
-printf("VALUESSS %d %d %d\n", left_d,center_d, right_d);
-    if( (right_d <=DISTANCE) || (center_d <=DISTANCE) || (left_d <=DISTANCE) )
+printf(" visibility L:%d C:%d R:%d\n", left_d,center_d, right_d);
+    if( (right_d <=TURN_DISTANCE) || (center_d <=TURN_DISTANCE) || (left_d <=TURN_DISTANCE) )
     {
 printf("VALUESSS ISNIDE %d %d %d\n", left_d,center_d, right_d);
         reverse();
@@ -537,12 +589,13 @@ printf("VALUESSS ISNIDE %d %d %d\n", left_d,center_d, right_d);
         goto follow_normal_path;
     } 
     else
+#endif
     {
         /* enough*/
         gpioWrite(MOTOR2A, PI_LOW);
         gpioWrite(MOTOR2B, PI_HIGH);
-        gpioWrite(MOTOR2E, PI_HIGH);
-        gpioWrite(MOTOR1E, PI_HIGH);
+	gpioPWM(MOTOR2E, LEFT_MOTOR_PQM);
+	gpioPWM(MOTOR1E, RIGHT_MOTOR_PQM);
         forward_flag=0;
         gpioDelay(TURN_TIME); 
         stop();
@@ -551,18 +604,19 @@ printf("VALUESSS ISNIDE %d %d %d\n", left_d,center_d, right_d);
 }
 void stop(void)
 {
-    cout<<"STOP"<<endl;
+//    cout<<"STOP"<<endl;
     gpioWrite(MOTOR1E, PI_LOW);
     gpioWrite(MOTOR2E, PI_LOW);
     forward_flag=0;
     obstacle=1;
+    time_sleep(1);
 }
 
 string route;
 
 void get_route_move_robo(int xa,int ya, int xb, int yb)
 {
-    //    system("clear");
+        system("clear");
     cout<<endl<<endl;  
     cout<<"Going from "<<xa<<","<<ya<<"->"<<xb<<","<<yb<<endl;
     route=pathFind(xa, ya, xb, yb);
@@ -607,6 +661,7 @@ void get_route_move_robo(int xa,int ya, int xb, int yb)
     }
 
     cout<<"Moving robot in path"<<endl;
+    getchar();
     while(1) {
 	for(int i=0;i<route.length();i++)
 	{
@@ -735,8 +790,8 @@ int main()
     gpioSetTimerFunc(0, 50, sonarTrigger); /* every 50ms */
     /* monitor sonar echos */
     gpioSetAlertFunc(SONAR_ECHO, sonarEcho);
-printf("START\n");
-getchar();
+printf("Waiting for Sonar to settle \n");
+getchar();	    
     get_route_move_robo(xA,yA,xB,yB);
     get_route_move_robo(xB,yB,xA,yA);
     get_route_move_robo(xC,yC,xA,yA);
