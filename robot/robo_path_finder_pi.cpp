@@ -7,8 +7,22 @@
 #include <ctime>
 #include <cstdlib>
 #include <stdio.h>
-#define RIGHT_MOTOR_PQM 230
-#define LEFT_MOTOR_PQM 255
+#define RIGHT_MOTOR_PQM 255
+#define LEFT_MOTOR_PQM 240
+#define DRIFT_PQM 95
+#define REVERSE 105
+
+
+#define DYNAMIC_DIS 80
+#define DISTANCE 18
+
+#define TURN_TIME       400000
+#define TURN_DRIFT_TIME 250000
+
+#define SERVO_RIGHT 700
+#define SERVO_CENTER 1200
+#define SERVO_LEFT 1900
+
 const int n=20;// horizontal size of the map
 const int m=20; // vertical size size of the map
 unsigned int robo_dir=2, new_dir=0;
@@ -26,7 +40,7 @@ static int map[n][m] = {
     {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, 
     {1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1}, 
     {1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1}, 
-    {1,1,1,1,1,1,1,1,0,0,0,0,'B',1,1,1,1,1,1,1}, 
+    {1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1}, 
     {1,1,1,1,1,1,1,1,0,0,0,0,0,1,1,1,1,1,1,1}, 
     {1,1,1,1,1,1,1,1,0,1,1,0,0,1,1,1,1,1,1,1}, 
     {1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1}, 
@@ -39,7 +53,7 @@ static int map[n][m] = {
     {1,1,1,1,1,1,0,0,0,0,1,0,0,0,0,0,1,1,1,1}, 
     {1,1,1,1,1,1,0,0,0,0,1,0,0,0,0,0,1,1,1,1}, 
     {1,1,1,1,1,1,0,0,0,0,1,0,0,0,0,1,1,1,1,1}, 
-    {1,1,1,1,1,1,0,0,0,0,1,0,0,0,0,1,1,1,1,1}, 
+    {1,1,1,1,1,1,0,0,0,0,1,0,0,'B',0,1,1,1,1,1}, 
     {1,1,1,1,1,1,0,'C',0,0,1,0,0,0,0,1,1,1,1,1}, 
     {1,1,1,1,1,1,0,0,0,0,1,0,0,0,'A',1,1,1,1,1}, 
     {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, 
@@ -96,6 +110,7 @@ uint8_t center_d=0;
 uint8_t left_d=0;
 static uint8_t obstacle=0;
 void move_servo_and_get_distance();
+static uint8_t eye_set=0;
 
 uint32_t left_check=0;   
 uint32_t right_check =0;
@@ -339,9 +354,13 @@ void sonarEcho(int gpio, int level, uint32_t tick)
         //	printf("%u ms, %d cm \n ", (tick-firstTick)/1000000, distance_s);
         //  printf(" %d cm \n ", distance_s);
     }
-#if 0
-    if((tick-firstTick)/1000000 > 5)
-        eye_set=1;
+#if 1
+    if(eye_set==0)
+    {
+	if((tick-firstTick)/1000000 > 5)
+	    eye_set=1;
+	printf("%u sec, %d cm \n ", (tick-firstTick)/1000000, distance_dynamic);
+    }
 #endif
 
     if(start<10)
@@ -357,7 +376,7 @@ void sonarEcho(int gpio, int level, uint32_t tick)
         //gpioTime(PI_TIME_RELATIVE, &secs, &mics);
         //printf("10-library started %d.%03d seconds ago\n", secs, mics/1000);
         //	printf("%u sec, %d cm \n ", (tick-firstTick)/1000000, distance_dynamic);
-        if(distance_dynamic <=5)
+        if(distance_dynamic <= 10)
         {
             obstacle=1;
             printf("Obstacle found!!!!! STOP LOOKOUT\n\n");
@@ -379,28 +398,22 @@ void sonarEcho(int gpio, int level, uint32_t tick)
 
 void move_servo_and_get_distance()
 {
-    int pw=0;
     gpioWrite  (PWM_TRIGGER, PI_OFF);
     gpioSetMode(PWM_TRIGGER, PI_OUTPUT);
 
-    pw=800;
-    gpioServo(18, pw);
+    gpioServo(18, SERVO_RIGHT);
     time_sleep(1.5);
     left_d = distance_dynamic;
 
-    pw=1300;
-    gpioServo(18, pw);
+    gpioServo(18, SERVO_CENTER);
     time_sleep(1.5);
     center_d = distance_dynamic;
 
-    pw=1900;
-    gpioServo(18,pw);
+    gpioServo(18,SERVO_LEFT);
     time_sleep(1.5);
     right_d = distance_dynamic;
 
-    pw=1300;
-    gpioServo(18,pw);
-    printf("%d\n", pw);
+    gpioServo(18,SERVO_CENTER);
     time_sleep(1);
     gpioSetMode(PWM_TRIGGER, PI_INPUT);
     printf("Left %d cm, Ceter %d cm Right %d cm\n", left_d, center_d, right_d);
@@ -411,10 +424,10 @@ void rightdrift(void)
 
     gpioWrite(MOTOR1A, PI_LOW);
     gpioWrite(MOTOR1B, PI_HIGH);
-    gpioPWM(MOTOR2E, 180);
-    gpioPWM(MOTOR1E, 180);
+    gpioPWM(MOTOR2E, LEFT_MOTOR_PQM - DRIFT_PQM);
+    gpioPWM(MOTOR1E, RIGHT_MOTOR_PQM - DRIFT_PQM);
     forward_flag=0;
-    gpioDelay(250000); 
+    gpioDelay(TURN_DRIFT_TIME); 
     gpioWrite(MOTOR1E, PI_LOW);
     gpioWrite(MOTOR2E, PI_LOW);
 }
@@ -422,10 +435,10 @@ void leftdrift(void)
 {
     gpioWrite(MOTOR2A, PI_LOW);
     gpioWrite(MOTOR2B, PI_HIGH);
-    gpioPWM(MOTOR2E, 180);
-    gpioPWM(MOTOR1E, 180);
+    gpioPWM(MOTOR2E, LEFT_MOTOR_PQM - DRIFT_PQM);
+    gpioPWM(MOTOR1E, RIGHT_MOTOR_PQM- DRIFT_PQM);
     forward_flag=0;
-    gpioDelay(250000); 
+    gpioDelay(TURN_DRIFT_TIME); 
     gpioWrite(MOTOR1E, PI_LOW);
     gpioWrite(MOTOR2E, PI_LOW);
 }
@@ -434,12 +447,12 @@ void forward(uint8_t pwm)
 follow_normal_path:
     /* Check distance for right iturn is enough */
 printf("VALUESSS %d %d %d\n", left_d, distance_dynamic, right_d);
-    if(distance_dynamic <= 10)
+    if(distance_dynamic <= DYNAMIC_DIS)
     {
         gpioWrite(MOTOR1E, PI_LOW);
         gpioWrite(MOTOR2E, PI_LOW);
 	move_servo_and_get_distance();
-        if( (right_d < 8) && (right_d < left_d) )
+        if( (right_d <DISTANCE) && (right_d < left_d) )
             /* drift slight left() */
             leftdrift();
         else
@@ -460,8 +473,8 @@ printf("VALUESSS %d %d %d\n", left_d, distance_dynamic, right_d);
             gpioWrite(MOTOR2A, PI_HIGH);
             gpioWrite(MOTOR2B, PI_LOW);
 
-            gpioPWM(MOTOR2E, 255);
-            gpioPWM(MOTOR1E, 230);
+            gpioPWM(MOTOR2E, LEFT_MOTOR_PQM);
+            gpioPWM(MOTOR1E, RIGHT_MOTOR_PQM);
             forward_flag=1;
         }
         time_sleep(0.8);
@@ -471,8 +484,8 @@ printf("VALUESSS %d %d %d\n", left_d, distance_dynamic, right_d);
 void reverse(void)
 {
     printf("Reversing\n");
-    gpioPWM(MOTOR2E, 170);
-    gpioPWM(MOTOR1E, 170);
+    gpioPWM(MOTOR2E, LEFT_MOTOR_PQM-REVERSE);
+    gpioPWM(MOTOR1E, RIGHT_MOTOR_PQM-REVERSE);
 
     gpioWrite(MOTOR1B, PI_HIGH);
     gpioWrite(MOTOR1A, PI_LOW);
@@ -480,7 +493,7 @@ void reverse(void)
     gpioWrite(MOTOR2B, PI_HIGH);
     gpioWrite(MOTOR2A, PI_LOW);
     obstacle = 0;
-    time_sleep(1);
+    gpioDelay(TURN_DRIFT_TIME); 
 
 }
 
@@ -490,7 +503,7 @@ void rightturn(void)
 follow_normal_path:
     /* Check distance for right iturn is enough */
 printf("VALUESSS %d %d %d\n", left_d,center_d, right_d);
-    if( (right_d <=8) || (center_d <= 8) || (left_d <=8) )
+    if( (right_d <=DISTANCE) || (center_d <=DISTANCE) || (left_d <=DISTANCE) )
     {
         reverse();
         stop();
@@ -505,7 +518,7 @@ printf("VALUESSS %d %d %d\n", left_d,center_d, right_d);
         gpioWrite(MOTOR2E, PI_HIGH);
         gpioWrite(MOTOR1E, PI_HIGH);
         forward_flag=0;
-        gpioDelay(250000); 
+        gpioDelay(TURN_TIME); 
         stop();
         obstacle = 0;
     }
@@ -515,7 +528,7 @@ void leftturn(void)
 follow_normal_path:
     /* Check distance for right iturn is enough */
 printf("VALUESSS %d %d %d\n", left_d,center_d, right_d);
-    if( (right_d <=8) || (center_d <= 8) || (left_d <=8) )
+    if( (right_d <=DISTANCE) || (center_d <=DISTANCE) || (left_d <=DISTANCE) )
     {
 printf("VALUESSS ISNIDE %d %d %d\n", left_d,center_d, right_d);
         reverse();
@@ -531,7 +544,7 @@ printf("VALUESSS ISNIDE %d %d %d\n", left_d,center_d, right_d);
         gpioWrite(MOTOR2E, PI_HIGH);
         gpioWrite(MOTOR1E, PI_HIGH);
         forward_flag=0;
-        gpioDelay(250000); 
+        gpioDelay(TURN_TIME); 
         stop();
         obstacle = 0;
     }
@@ -713,6 +726,10 @@ int main()
     gpioSetMode(MOTOR2E,  PI_OUTPUT);
     gpioSetMode(MOTOR2A,  PI_OUTPUT);
     gpioSetMode(MOTOR2B,  PI_OUTPUT);
+    
+    gpioServo(18, SERVO_CENTER);
+    time_sleep(1);
+    gpioSetMode(PWM_TRIGGER, PI_INPUT);
 
     /* update sonar 20 times a second, timer #0 */
     gpioSetTimerFunc(0, 50, sonarTrigger); /* every 50ms */
