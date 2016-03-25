@@ -1,0 +1,15 @@
+make 
+make clean
+
+Optimize forward lookup by calculating the time lapse 
+e.g - it should move for 1 sec but if obstacle at t time. then after rerouting it should move to t1=(1-t) sec
+
+Approach.
+-# Calculated forward movement based on the visible distance and actual path to traverse from the route MAP
+-# Timed feedback to move forward. e.g - it should move for 1 sec but if obstacle at t time. then after rerouting it should move to t1=(1-t) sec
+-# Sharp Turns else path is lost on every movement.
+-# Support Rerouting only for 3 times 
+-# While on Turns need to check the turning radius, else move forward a bit. So feedback driven forward + Normal controlled forward.
+
+-# Add AI in rememebering the Obstacle location by marking on Map -- FUTURE
+
